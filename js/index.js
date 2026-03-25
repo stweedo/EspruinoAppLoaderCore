@@ -429,8 +429,8 @@ function handleCustomApp(appTemplate) {
           <a href="#close" class="btn btn-clear float-right" aria-label="Close"></a>
           <div class="modal-title h5">${escapeHtml(appTemplate.name)}</div>
         </div>
-        <div class="modal-body" style="flex:1;min-height:0;overflow:hidden">
-          <div class="content" style="height:100%;min-height:0">
+        <div class="modal-body" style="height:100%">
+          <div class="content" style="height:100%">
             <iframe src="apps/${appTemplate.id}/${appTemplate.custom}" style="width:100%;height:100%;border:0px;">
           </div>
         </div>
@@ -480,8 +480,8 @@ function handleAppInterface(app) {
           <a href="#close" class="btn btn-clear float-right" aria-label="Close"></a>
           <div class="modal-title h5">${escapeHtml(app.name)}</div>
         </div>
-        <div class="modal-body" style="flex:1;min-height:0;overflow:hidden">
-          <div class="content" style="height:100%;min-height:0">
+        <div class="modal-body" style="height:100%">
+          <div class="content" style="height:100%">
             <iframe style="width:100%;height:100%;border:0px;">
           </div>
         </div>
