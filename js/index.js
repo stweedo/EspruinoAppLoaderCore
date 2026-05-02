@@ -685,6 +685,98 @@ function handlefavouriteClick(icon,app,button){
     try { if (icon) icon.classList.remove("favoriteAnim"); } catch (e) { console.error(e); }
   }, favAnimMS);
 }
+
+function launchSingleFileEmulatorApp(app, entryFile) {
+  let baseurl = window.location.href.replace(/\/[^/]*$/,"/");
+  baseurl = baseurl.substr(0,baseurl.lastIndexOf("/"));
+  let url = baseurl+"/apps/"+app.id+"/"+entryFile.url;
+  window.open(`https://espruino.com/ide/emulator.html?codeurl=${url}&upload`);
+}
+
+function getEmulatorAppFiles(app, deviceId) {
+  let emuDevice = { id:deviceId, version:RECOMMENDED_VERSION, appsInstalled:[] };
+  let fileOptions = {
+    fileGetter : httpGet,
+    settings : SETTINGS,
+    language : LANGUAGE,
+    device : emuDevice
+  };
+  let allFiles = [];
+  let uploadOptions = {
+    apps : appJSON,
+    device : emuDevice,
+    language : LANGUAGE,
+    checkForClashes : false,
+    showQuery : () => Promise.resolve(),
+    needsApp : dependency => AppInfo.getFiles(dependency, fileOptions).then(files => {
+      allFiles = allFiles.concat(files);
+      let appInfo = files.find(f=>f.name == AppInfo.getAppInfoFilename(dependency));
+      return appInfo ? JSON.parse(appInfo.content) : dependency;
+    })
+  };
+  return AppInfo.checkDependencies(app, emuDevice, uploadOptions)
+    .then(() => AppInfo.getFiles(app, fileOptions))
+    .then(files => allFiles.concat(files));
+}
+
+function sendEmulatorInstallScript(emulatorWindow, targetOrigin, nonce, command, app) {
+  return new Promise((resolve,reject) => {
+    if (!emulatorWindow) return reject("Unable to open emulator window");
+    let timer;
+    let timeout;
+    function finish(err) {
+      clearInterval(timer);
+      clearTimeout(timeout);
+      window.removeEventListener("message", onMessage);
+      if (err) reject(err); else resolve();
+    }
+    function postUpload() {
+      if (emulatorWindow.closed) return finish("Emulator window closed");
+      emulatorWindow.postMessage({
+        type : "bangleapps.emulatorUpload",
+        nonce : nonce,
+        code : command
+      }, targetOrigin);
+    }
+    function onMessage(event) {
+      if (event.source !== emulatorWindow) return;
+      let msg = event.data || {};
+      if (msg.type != "bangleapps.emulatorUpload" || msg.nonce !== nonce) return;
+      if (msg.status == "accepted") {
+        clearInterval(timer);
+        clearTimeout(timeout);
+        timeout = setTimeout(() => finish("Timed out waiting for emulator upload"), 120000);
+        showToast(`Installing ${Utils.formatAppName(app)} in emulator...`);
+      } else if (msg.status == "done") {
+        showToast(`${Utils.formatAppName(app)} installed in emulator`, "success");
+        finish();
+      } else if (msg.status == "error") {
+        finish(msg.message || "Emulator upload failed");
+      }
+    }
+    window.addEventListener("message", onMessage);
+    timer = setInterval(postUpload, 500);
+    timeout = setTimeout(() => finish("Timed out waiting for emulator"), 30000);
+    postUpload();
+  });
+}
+
+function launchInstalledEmulatorApp(app, entryFile) {
+  let supportedDevices = (app.supports||[]).filter(id=>["BANGLEJS","BANGLEJS2"].includes(id));
+  let deviceId = supportedDevices.length == 1 ? supportedDevices[0] : device.id || "BANGLEJS2";
+  let nonce = Date.now().toString(36) + Math.random().toString(36).substr(2);
+  let emulatorURL = new URL("https://www.espruino.com/ide/emulator.html");
+  emulatorURL.searchParams.set("apploader", nonce);
+  emulatorURL.searchParams.set("emulatordevice", deviceId);
+  let emulatorWindow = window.open(emulatorURL.toString());
+  return getEmulatorAppFiles(app, deviceId).then(files => {
+    let command = files.map(f=>f.cmd).join("\n") + `\nload(${JSON.stringify(entryFile.name)})\n`;
+    return sendEmulatorInstallScript(emulatorWindow, emulatorURL.origin, nonce, command, app);
+  }).catch(err => {
+    showToast(`Emulator install failed, ${err}`, "error");
+  });
+}
+
 // Refill the library with apps
 function refreshLibrary(options) {
   options = options||{};
@@ -843,15 +935,27 @@ function refreshLibrary(options) {
       // check icon to figure out what we should do
       if (icon.classList.contains("icon-emulator")) {
         // emulator
-        let file = app.storage.find(f=>f.name.endsWith('.js'));
+        let file = app.storage.find(f=>f.name.endsWith(".app.js")) ||
+                   app.storage.find(f=>f.name.endsWith(".js"));
         if (!file) {
           console.error("No entrypoint found for "+appid);
           return;
         }
-        let baseurl = window.location.href.replace(/\/[^/]*$/,"/");
-        baseurl = baseurl.substr(0,baseurl.lastIndexOf("/"));
-        let url = baseurl+"/apps/"+app.id+"/"+file.url;
-        window.open(`https://espruino.com/ide/emulator.html?codeurl=${url}&upload`);
+        if (Object.keys(app.dependencies||{}).length ||
+            (app.data||[]).some(f=>f.url || f.content) ||
+            app.storage.some(f=>f.name != file.name && f.name != "RAM")) {
+          showPrompt("Install in Emulator",
+            `${Utils.formatAppName(app)} uses additional files. Install all files into emulator Storage?`,
+            {yes:1, ram:1, no:1}
+          ).then(choice => {
+            if (choice == "ram")
+              launchSingleFileEmulatorApp(app, file);
+            else
+              startOperation({name:"Prepare Emulator App"}, () => launchInstalledEmulatorApp(app, file));
+          }).catch(() => {});
+        } else {
+          launchSingleFileEmulatorApp(app, file);
+        }
       } else if (icon.classList.contains("icon-upload")) {
         // upload
         icon.classList.remove("icon-upload");

@@ -113,6 +113,7 @@ function showPrompt(title, text, buttons, shouldEscapeHtml) {
         ${Object.keys(buttons).length ? `
           <div class="modal-footer">
             ${buttons.yes?'<button class="btn btn-primary" isyes="1">Yes</button>':''}
+            ${buttons.ram?'<button class="btn" isyes="ram">Upload app.js to RAM</button>':''}
             ${buttons.no?'<button class="btn" isyes="0">No</button>':''}
             ${buttons.ok?'<button class="btn" isyes="1">Ok</button>':''}
             ${buttons.footer?`<span style="float:left">${buttons.footer}<span>`:""}
@@ -129,8 +130,9 @@ function showPrompt(title, text, buttons, shouldEscapeHtml) {
     htmlToArray(modal.getElementsByTagName("button")).forEach(button => {
       button.addEventListener("click",event => {
         event.preventDefault();
-        let isYes = event.target.getAttribute("isyes")=="1";
-        if (isYes) resolve();
+        let isYes = event.target.getAttribute("isyes");
+        if (isYes=="ram") resolve("ram");
+        else if (isYes=="1") resolve();
         else reject("User cancelled");
         modal.remove();
       });
